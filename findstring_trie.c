@@ -13,14 +13,11 @@
 #define BUILD_BUF_SIZE 512
 #define WORK_BUF_SIZE 512
 
-#define LINES_CNT 117
-#define CHARS_BY_LINE 117
-
 struct linked_node {
   struct linked_node* next;
 
-  /* Character written in the edge */
-  char c;
+  /* String written in the edge */
+  char* c;
 
   /* Endpoint of the edge */
   struct trie_node* trie_ptr;
@@ -34,40 +31,103 @@ struct trie_node {
   bool is_final;
 };
 
-/*  Moves from given node in a trie to another connected by given character. */
-/*  Creates new node if no such node exists. */
-struct trie_node* traverse(struct trie_node* from, char c) {
+/* Adds a new egde from a given node in a trie */
+void add_new_list_node(struct linked_node** linked_ptr, char* str) {
+  (*linked_ptr) = (struct linked_node*)calloc(1, sizeof(struct linked_node));
+  (*linked_ptr)->c = (char *)malloc(sizeof(char)*(strlen(str)+1));
+  strcpy((*linked_ptr)->c, str);
+  (*linked_ptr)->trie_ptr = (struct trie_node*)calloc(1, sizeof(struct trie_node));
+}
+
+/* Makes a branch in a given edge */
+struct trie_node* split_in_two(struct linked_node* ptr, size_t skip, char* str) {
+  struct trie_node* node = ptr->trie_ptr;
+  struct trie_node* new_node1;
+  struct trie_node* new_node2;
+  struct linked_node* new_linked;
+
+  add_new_list_node(&new_linked, &ptr->c[skip]);
+
+  new_node1 = new_linked->trie_ptr;
+  memcpy(new_node1, node, sizeof(struct trie_node));
+  node->list_next = new_linked;
+
+  add_new_list_node(&node->list_next->next, &str[skip]);
+
+  new_node2 = node->list_next->next->trie_ptr;
+
+  ptr->c[skip] = '\0';
+
+  node->is_final = false;
+
+  return new_node2;
+}
+
+/* Adds a new node in the middle of a given edge */
+struct trie_node* split_in_the_middle(struct linked_node* ptr, size_t skip) {
+  struct trie_node new_node;
+  memcpy(&new_node, ptr->trie_ptr, sizeof(struct trie_node));
+
+  add_new_list_node(&ptr->trie_ptr->list_next, &ptr->c[skip]);
+
+  memcpy(ptr->trie_ptr->list_next->trie_ptr, &new_node, sizeof(struct trie_node));
+
+  ptr->c[skip] = '\0';
+  ptr->trie_ptr->is_final = false;
+
+  return ptr->trie_ptr;
+}
+
+/*  Moves from a given node in a trie to another connected by given character. */
+/*  Creates a new node if no such node exists. */
+struct trie_node* traverse(struct trie_node* from, char* str) {
   struct linked_node* ptr = from->list_next;
+  size_t add_len = strlen(str);
+
+  if (add_len == 0) return from;
 
   /* First edge from given node */
   if (from->list_next == NULL) {
-    from->list_next = (struct linked_node*)calloc(1, sizeof(struct linked_node));
-    from->list_next->c = c;
-    from->list_next->trie_ptr = (struct trie_node*)calloc(1, sizeof(struct trie_node));
+    add_new_list_node(&from->list_next, str);
     return from->list_next->trie_ptr;
   }
 
   /* Search in linked list */
   while (true)
   {
-    if (ptr->c == c) return ptr->trie_ptr;
+    if (ptr->c[0] == str[0]) {
+      size_t have_len = strlen(ptr->c);
+      size_t idx = 1;
+
+      while (idx < add_len && idx < have_len && ptr->c[idx] == str[idx]) idx++;
+
+      if (idx < add_len && idx < have_len) {
+        return split_in_two(ptr, idx, str);
+      }
+
+      if (idx < have_len) {
+        return split_in_the_middle(ptr, idx);
+      }
+
+      if (idx < add_len) {
+        return traverse(ptr->trie_ptr, &str[idx]);
+      }
+
+      return ptr->trie_ptr;
+    }
     if (ptr->next == NULL) break;
     ptr = ptr->next;
   }
 
   /* Nothing was found, so new node should be created */
-  ptr->next = (struct linked_node*)calloc(1, sizeof(struct linked_node));
-  ptr->next->c = c;
-  ptr->next->trie_ptr = (struct trie_node*)calloc(1, sizeof(struct trie_node));
+  add_new_list_node(&ptr->next, str);
   return ptr->next->trie_ptr;
 }
 
 /* Adds new string to a trie from given node. */
-struct trie_node* add_str(struct trie_node* from, char* str, int len) {
+struct trie_node* add_str(struct trie_node* from, char* str) {
   struct trie_node* ptr = from;
-  for (int i = 0; i < len; i++) {
-    ptr = traverse(ptr, str[i]);
-  }
+  ptr = traverse(ptr, str);
   return ptr;
 }
 
@@ -87,7 +147,7 @@ struct trie_node* build_trie(const char* filename)
   char* ret = fgets(buf, BUILD_BUF_SIZE, f);
 
   while (ret != NULL) {
-    int len = (int)strlen(buf);
+    size_t len = strlen(buf);
 
     /* Last chunk of a line */
     bool last = false;
@@ -103,7 +163,7 @@ struct trie_node* build_trie(const char* filename)
       last = true;
     }
 
-    ptr = add_str(ptr, buf, len);
+    ptr = add_str(ptr, buf);
 
     if (last) {
       ptr->is_final = true;
@@ -116,15 +176,29 @@ struct trie_node* build_trie(const char* filename)
   return root;
 }
 
-/* Finds a node connected to given by given character. */
+/* Finds a node connected to given by a given string. */
 /* Returns NULL if no such node exists. */
-struct trie_node* find_next(struct trie_node* from, char c) {
+struct trie_node* find_next(struct trie_node* from, char* str) {
   struct linked_node* ptr = from->list_next;
 
   /* Search in linked list */
   while (ptr != NULL)
   {
-    if (ptr->c == c) return ptr->trie_ptr;
+    if (ptr->c[0] == str[0])
+    {
+      size_t idx = 0;
+      size_t add_len = strlen(str);
+      size_t have_len = strlen(ptr->c);
+
+      while (idx < add_len && idx < have_len && ptr->c[idx] == str[idx]) idx++;
+
+      if (idx < have_len) return NULL;
+
+      if (idx < add_len) return find_next(ptr->trie_ptr, &str[idx]);
+
+      return ptr->trie_ptr;
+    }
+
     ptr = ptr->next;
   }
 
@@ -136,11 +210,10 @@ struct trie_node* find_next(struct trie_node* from, char c) {
 /* Returns NULL if no such node exists. */
 struct trie_node* find_line(struct trie_node* root, char* line)
 {
-  size_t len = strlen(line);
+  if (strlen(line) == 0) return root;
+
   struct trie_node* ptr = root;
-  for (size_t i = 0; i < len && ptr != NULL; i++) {
-    ptr = find_next(ptr, line[i]);
-  }
+  ptr = find_next(ptr, line);
   return ptr;
 }
 
@@ -156,6 +229,7 @@ void free_dfs(struct trie_node* node)
 
     ptr = ptr->next;
 
+    free(old_ptr->c);
     free(old_ptr);
   }
   free(node);
@@ -166,7 +240,6 @@ void work(const char* dict_filename, FILE* input_file, FILE* output_file) {
 
   struct trie_node* root = build_trie(dict_filename);
 
-  fprintf(stderr, "Trie is built\n");
   fprintf(stderr, "Building time: %lf sec.\n", (double)(clock()-st)/CLOCKS_PER_SEC);
 
   char buf[WORK_BUF_SIZE] = {};
@@ -191,6 +264,7 @@ void work(const char* dict_filename, FILE* input_file, FILE* output_file) {
     /* Last chunk of a line */
     bool final = false;
 
+    /* Remove trailing newline character */
     if (buf[len-1] == '\n') {
       buf[len-1] = '\0';
       final = 1;
@@ -203,7 +277,9 @@ void work(const char* dict_filename, FILE* input_file, FILE* output_file) {
       fputs("NO\n", output_file);
 
       /*  Read until the end of the file */
-      while (!final && (ret = fgets(buf, WORK_BUF_SIZE, input_file)) != NULL && buf[strlen(buf)-1] != '\n') ;
+      while (!final &&
+             (ret = fgets(buf, WORK_BUF_SIZE, input_file)) != NULL &&
+             buf[strlen(buf)-1] != '\n') ;
 
       first = true;
       ptr = root;
@@ -225,8 +301,12 @@ void work(const char* dict_filename, FILE* input_file, FILE* output_file) {
 
   st = clock();
   free_dfs(root);
+
   fprintf(stderr, "Freeing time: %lf sec.\n", (double)(clock()-st)/CLOCKS_PER_SEC);
 }
+
+#define LINES_CNT 12000
+#define CHARS_BY_LINE 12000
 
 void stress()
 {
