@@ -38,7 +38,4 @@ tags
 *.exe
 *.out
 *.app
-sat
-tsp
-kp
-gcp
+findstring_trie
