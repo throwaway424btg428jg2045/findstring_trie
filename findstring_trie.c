@@ -1,14 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
 #include <string.h>
 #include <stdbool.h>
 #include <time.h>
-#include <errno.h>
-
-#define MIN_CHAR 32
-#define MAX_CHAR 126
-#define CHAR_CNT (MAX_CHAR - MIN_CHAR + 1)
 
 #define BUILD_BUF_SIZE 512
 #define WORK_BUF_SIZE 512
@@ -305,104 +299,8 @@ void work(const char* dict_filename, FILE* input_file, FILE* output_file) {
   fprintf(stderr, "Freeing time: %lf sec.\n", (double)(clock()-st)/CLOCKS_PER_SEC);
 }
 
-#define LINES_CNT 12000
-#define CHARS_BY_LINE 12000
-
-void stress()
-{
-  int cnt = 0;
-  while (1) {
-    size_t dic_len = 0;
-    fprintf(stderr, "\r%d\r", ++cnt);
-    FILE* f = fopen("dictionary.txt", "wt");
-    char* lines[LINES_CNT];
-    for (int i = 0; i < LINES_CNT; i++) {
-      int chars = rand()%CHARS_BY_LINE + 1;
-      /* int chars = CHARS_BY_LINE; */
-      /* int chars = CHARS_BY_LINE-i+1; */
-      lines[i] = (char*)malloc(sizeof(char)*((unsigned int)chars+1));
-      lines[i][chars] = '\0';
-      for (int j = 0; j < chars; j++) {
-        char c = (char)(rand()%CHAR_CNT + MIN_CHAR);
-        if (j == 3 && c == 't' && chars == 4) c = 'o';
-        lines[i][j] = c;
-        fputc(c,f);
-        dic_len++;
-      }
-      fputc('\n', f);
-      dic_len++;
-    }
-    fclose(f);
-
-    fprintf(stderr, "Dictionary size: %lf MB\n", (double)dic_len/1024.0/1024.0);
-
-    bool res[LINES_CNT];
-    f = fopen("input.txt", "wt");
-    for (int i = 0; i < LINES_CNT; i++) {
-      int chars = rand()%CHARS_BY_LINE + 1;
-      char line[chars+1];
-      line[chars] = '\0';
-      for (int j = 0; j < chars; j++) {
-        char c = (char)(rand()%CHAR_CNT + MIN_CHAR);
-        line[j] = c;
-        fputc(c,f);
-      }
-      res[i] = false;
-      for (int j = 0; j < LINES_CNT; j++) {
-        if (strcmp(line, lines[j]) == 0) {
-          res[i] = true;
-          break;
-        }
-      }
-      fputc('\n', f);
-    }
-    fputs("exit\n", f);
-    fclose(f);
-
-    for (int i = 0; i < LINES_CNT; i++) {
-      free(lines[i]);
-    }
-
-    FILE* input_file = fopen("input.txt", "rt");
-    FILE* output_file = fopen("output.txt", "wt");
-    work("dictionary.txt", input_file, output_file);
-    fclose(input_file);
-    fclose(output_file);
-
-    output_file = fopen("output.txt", "rt");
-
-    for (int i = 0; i < LINES_CNT; i++) {
-      char line[8];
-      fgets(line, 8, output_file);
-
-      if (line[2] == '\n') line[2] = '\0';
-      if (line[3] == '\n') line[3] = '\0';
-
-      if (strcmp(line, "YES") != 0 && strcmp(line, "NO") != 0) {
-        fprintf(stderr, "Some strange shit is happening right here\n");
-        exit(0);
-      }
-
-      if (strcmp(line, "YES") == 0) {
-        if (res[i] == false) {
-          fprintf(stderr, "It should be NO, but it's YES\n");
-          exit(0);
-        }
-      }
-      if (strcmp(line, "NO") == 0) {
-        if (res[i] == true) {
-          fprintf(stderr, "It should be YES, but it's NO\n");
-          exit(0);
-        }
-      }
-    }
-    fclose(output_file);
-  }
-}
-
 int main(int argc, char const* argv[])
 {
-  stress();
   if (argc < 2) {
     printf("Usage:\n%s [FILE]\n", argv[0]);
     exit(0);
